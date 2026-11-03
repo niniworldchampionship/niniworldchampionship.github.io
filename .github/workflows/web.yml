@@ -1,0 +1,126 @@
+# Web de estadísticas de la Nini World Championship (https://niniworldchampionship.github.io).
+# El código es el del repo privado niniworldchampionship/playus (se baja con una deploy key de solo
+# lectura: secret PLAYUS_CLAVE) y los datos, los de Google Drive (secret RCLONE_CONF, de solo lectura). Este repo solo
+# tiene este workflow: en un repo público los minutos de Actions son gratis.
+# Solo se lanza programado o a mano, nunca desde pull requests, así que los secrets no salen de aquí.
+# Las acciones van fijadas por commit; rclone y uv, por versión (rclone, con su sha256).
+name: Web
+
+on:
+  schedule:
+    # Las mismas expresiones que playus.web.despliegue (que decide si hace falta construir)
+    - cron: "10 1 * * *"       # 01:10 UTC, justo después de cerrar el juego: la web provisional del día
+    - cron: "40 1 * * *"       # de red: solo si la de las 01:10 no ha publicado
+    - cron: "*/30 6-11 * * *"  # tras el pipeline oficial (8:15 en Madrid): solo si Drive ha cambiado
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+    inputs:
+      rama:
+        description: Rama del código de playus
+        default: master
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: web
+  cancel-in-progress: false
+
+env:
+  TZ: Europe/Madrid
+  PYTHONUNBUFFERED: "1"
+  WEB: https://niniworldchampionship.github.io
+  DATOS: drive:playus/data
+
+jobs:
+  construir:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    outputs:
+      publicar: ${{ steps.decidir.outputs.construir }}
+    steps:
+      - name: Código de playus
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: niniworldchampionship/playus
+          ref: ${{ inputs.rama || 'master' }}
+          ssh-key: ${{ secrets.PLAYUS_CLAVE }}
+          persist-credentials: false
+
+      - name: rclone
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+        run: |
+          # rclone en versión fija, comprobada con su sha256 (ve el token de Drive: nunca el script de instalación sin fijar)
+          curl -fsSL -o /tmp/rclone.zip https://github.com/rclone/rclone/releases/download/v1.75.2/rclone-v1.75.2-linux-amd64.zip
+          echo "349ac8fba6ff65d6247043f1750cdcb518ec5d500ef91463a10d37c0ccdf3702  /tmp/rclone.zip" | sha256sum -c --quiet
+          unzip -q -j /tmp/rclone.zip "*/rclone" -d /tmp/rclone && sudo install -m 755 /tmp/rclone/rclone /usr/local/bin/rclone
+          mkdir -p ~/.config/rclone
+          (umask 077 && printf '%s\n' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf)
+
+      - name: ¿Hay que construir?
+        id: decidir
+        env:
+          CRON: ${{ github.event.schedule }}
+        run: PYTHONPATH=src python3 -m playus.web.despliegue
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        if: steps.decidir.outputs.construir == 'true'
+        with:
+          version: "0.12.1"
+          enable-cache: true
+
+      - name: Dependencias
+        if: steps.decidir.outputs.construir == 'true'
+        run: uv sync --frozen --no-dev
+
+      - name: Bajar los datos de Drive
+        if: steps.decidir.outputs.construir == 'true'
+        run: |
+          rclone copy "$DATOS" data --transfers 16 --fast-list --exclude "/output/**"
+          rm -f ~/.config/rclone/rclone.conf  # el token de Drive no hace falta para construir
+          test -f data/estado/config.json
+
+      - name: Construir la web
+        if: steps.decidir.outputs.construir == 'true'
+        run: uv run python -m playus web --actualizar
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9  # v5.0.0
+        if: steps.decidir.outputs.construir == 'true'
+        with:
+          path: sitio
+
+  publicar:
+    needs: construir
+    if: needs.construir.outputs.publicar == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.despliegue.outputs.page_url }}
+    steps:
+      - id: despliegue
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346  # v5.0.1
+
+  vivo:
+    # GitHub apaga los workflows programados de un repo público tras 60 días sin actividad
+    if: github.event.schedule == '10 1 * * *'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Commit mínimo si el último tiene más de 30 días
+        run: |
+          if [ $(( $(date +%s) - $(git log -1 --format=%ct) )) -gt $(( 30 * 86400 )) ]; then
+            date -u +%F > .vivo
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .vivo
+            git commit -q -m "Sigue viva"
+            git push -q
+          fi
