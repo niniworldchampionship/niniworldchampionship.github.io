@@ -11,7 +11,7 @@ on:
     # Las mismas expresiones que playus.web.despliegue (que decide si hace falta construir)
     - cron: "10 1 * * *"       # 01:10 UTC, justo después de cerrar el juego: la web provisional del día
     - cron: "40 1 * * *"       # de red: solo si la de las 01:10 no ha publicado
-    - cron: "*/30 6-11 * * *"  # tras el pipeline oficial (8:15 en Madrid): solo si Drive ha cambiado
+    - cron: "*/30 6-11 * * *"  # de red tras el pipeline oficial (que ya la lanza al terminar): solo si Drive ha cambiado
     - cron: "0 12 * * *"
   workflow_dispatch:
     inputs:
@@ -19,6 +19,10 @@ on:
         description: Rama del código de playus
         default: master
         required: true
+      solo_si_cambia:
+        description: Solo si los datos de Drive han cambiado (así la lanza el pipeline de playus al terminar)
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -64,6 +68,7 @@ jobs:
         id: decidir
         env:
           CRON: ${{ github.event.schedule }}
+          SOLO_SI_CAMBIA: ${{ inputs.solo_si_cambia }}
         run: PYTHONPATH=src python3 -m playus.web.despliegue
 
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
