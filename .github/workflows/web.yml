@@ -11,8 +11,11 @@ on:
     # Las mismas expresiones que playus.web.despliegue (que decide si hace falta construir)
     - cron: "10 1 * * *"       # 01:10 UTC, justo después de cerrar el juego: la web provisional del día
     - cron: "40 1 * * *"       # de red: solo si la de las 01:10 no ha publicado
-    - cron: "*/30 6-11 * * *"  # de red tras el pipeline oficial (que ya la lanza al terminar): solo si Drive ha cambiado
-    - cron: "0 12 * * *"
+    # Tras el pipeline oficial (8:15 en Madrid), solo si los datos de Drive han cambiado: cada 10 min de 06:00
+    # a 09:00 UTC, cada 30 hasta las 12:00 y cada hora hasta las 22:00 (desempates largos, lanzadas a mano)
+    - cron: "*/10 6-8 * * *"
+    - cron: "*/30 9-11 * * *"
+    - cron: "0 12-22 * * *"
   workflow_dispatch:
     inputs:
       rama:
