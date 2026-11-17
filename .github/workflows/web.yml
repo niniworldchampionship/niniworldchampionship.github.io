@@ -11,11 +11,12 @@ on:
     # Las mismas expresiones que playus.web.despliegue (que decide si hace falta construir)
     - cron: "10 1 * * *"       # 01:10 UTC, justo después de cerrar el juego: la web provisional del día
     - cron: "40 1 * * *"       # de red: solo si la de las 01:10 no ha publicado
-    # Tras el pipeline oficial (8:15 en Madrid), solo si los datos de Drive han cambiado: cada 10 min de 06:00
-    # a 09:00 UTC, cada 30 hasta las 12:00 y cada hora hasta las 22:00 (desempates largos, lanzadas a mano)
+    # Comprobaciones: solo si la API ha sacado un documento nuevo (uno cada hora: el juego en curso) o si los datos
+    # de Drive han cambiado. Cada hora y, tras el pipeline oficial (8:15 en Madrid), cada 10 min de 06:00 a
+    # 09:00 UTC y cada 30 hasta las 12:00 (desempates largos, lanzadas a mano)
     - cron: "*/10 6-8 * * *"
     - cron: "*/30 9-11 * * *"
-    - cron: "0 12-22 * * *"
+    - cron: "15 0,2-23 * * *"
   workflow_dispatch:
     inputs:
       rama:
@@ -23,7 +24,7 @@ on:
         default: master
         required: true
       solo_si_cambia:
-        description: Solo si los datos de Drive han cambiado (así la lanza el pipeline de playus al terminar)
+        description: Solo si la API o los datos de Drive han cambiado (así la lanza el pipeline de playus al terminar)
         type: boolean
         default: false
 
