@@ -3,6 +3,8 @@
 # lectura: secret PLAYUS_CLAVE) y los datos, los de Google Drive (secret RCLONE_CONF, de solo lectura). Este repo solo
 # tiene este workflow: en un repo público los minutos de Actions son gratis.
 # Solo se lanza programado o a mano, nunca desde pull requests, así que los secrets no salen de aquí.
+# GitHub retrasa horas o pierde los `schedule`: un Worker de Cloudflare (despliegue/disparador/ del repo privado)
+# lanza las mismas programaciones a su hora con workflow_dispatch y el input `cron`; los schedule quedan de red.
 # Las acciones van fijadas por commit; rclone y uv, por versión (rclone, con su sha256).
 name: Web
 
@@ -27,6 +29,10 @@ on:
         description: Solo si la API o los datos de Drive han cambiado (así la lanza el pipeline de playus al terminar)
         type: boolean
         default: false
+      cron:
+        description: Programación a la que corresponde (así la lanza el disparador externo, igual que el schedule)
+        default: ""
+        required: false
 
 permissions: {}
 
@@ -71,7 +77,7 @@ jobs:
       - name: ¿Hay que construir?
         id: decidir
         env:
-          CRON: ${{ github.event.schedule }}
+          CRON: ${{ github.event.schedule || inputs.cron }}
           SOLO_SI_CAMBIA: ${{ inputs.solo_si_cambia }}
         run: PYTHONPATH=src python3 -m playus.web.despliegue
 
@@ -117,7 +123,7 @@ jobs:
 
   vivo:
     # GitHub apaga los workflows programados de un repo público tras 60 días sin actividad
-    if: github.event.schedule == '10 1 * * *'
+    if: github.event.schedule == '10 1 * * *' || inputs.cron == '10 1 * * *'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
